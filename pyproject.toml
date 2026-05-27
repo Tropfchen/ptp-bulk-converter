@@ -1,0 +1,11 @@
+[project]
+requires-python = ">= 3.7"
+version = "0.1.0"
+name = "ptp_converter"
+
+[tool.ruff.lint]
+preview = true
+select = ["E4", "E7", "E9", "F", "B", "Q", "N", "I", "C4", "ICN", "PIE", "RET", "SIM", "PTH", "DTZ"]
+
+[tool.ruff]
+line-length = 120
