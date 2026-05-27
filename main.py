@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import configparser
 import os
 import re
@@ -105,7 +106,7 @@ class AircraftLivery(AircraftConfig):
             )
 
 
-def discover_aircraft_in_sim(game_path: str | Path, ignore_unknown_ac: bool = True) -> Iterable[AircraftConfig]:
+def discover_aircraft_in_sim(game_path: str | Path, unknown_ac_warning: bool = True) -> Iterable[AircraftConfig]:
     simobjects = Path(game_path).resolve() / AIRPLANES_DIR
     for sub in simobjects.glob("PMDG*"):
         if not sub.is_dir():
@@ -119,9 +120,9 @@ def discover_aircraft_in_sim(game_path: str | Path, ignore_unknown_ac: bool = Tr
             text = cfg.read_text(encoding="utf-8", errors="ignore")
             rel_path = sub.name + "/"
             yield from AircraftConfig.from_aircraft_config_text(text, rel_path)
-        except ValueError:
-            if not ignore_unknown_ac:
-                raise
+        except ValueError as e:
+            if unknown_ac_warning:
+                print(f"Warning: {e}")
 
 
 def query_registry() -> Iterable[tuple[str, Path]]:
@@ -265,49 +266,50 @@ def _find_ptp():
 
 
 def parse_args(argv: list[str]) -> tuple[Path, list[Path], bool]:
-    dry_run = False
-    discovery_run = False
-    i = 1
     games = get_games_paths()
+    game_choices = list(games.keys())
 
-    try:
-        if argv[i] == "-n":
-            dry_run = True
-            i += 1
-        elif argv[i] == "-f":
-            discovery_run = True
-            i += 1
+    parser = argparse.ArgumentParser(
+        description="Process livery files for flight simulators.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Available simulators:\n" + "\n".join(game_choices),
+    )
+    parser.add_argument("-n", "--dry-run", action="store_true", help="Run without making changes")
+    parser.add_argument(
+        "-d", "--discovery", action="store_true", help="Discover and list aircraft models in the simulator"
+    )
+    parser.add_argument("sim", help="Simulator short name or path")
+    parser.add_argument("files", nargs="*", help="Livery files (.ptp) to process")
+    args = parser.parse_args(argv[1:])
 
-        game_path = games.get(argv[i].lower())
-        if not game_path:
-            game_path = Path(argv[2])
-        assert game_path.is_dir()
+    # Resolve game path
+    game_path = games.get(args.sim.lower())
+    if not game_path:
+        game_path = Path(args.sim)
 
-        if discovery_run:
-            models = list(discover_aircraft_in_sim(game_path))
-            print(f"Found inside '{game_path}' models:")
-            print(*models, sep="\n")
-            sys.exit(0)
+    if not game_path.is_dir():
+        parser.error(f"Invalid simulator name/path: {game_path}\nFound simulators:\n" + "\n".join(game_choices))
 
-        # game_path = Path(argv[i]) if Path(argv[i]).is_dir() else games[argv[i]]
-        # file_paths = [Path(arg).resolve() for arg in argv[i + 1 :]]
-        file_paths = []
-        for arg in argv[i + 1 :]:
-            livery_path = Path(arg).resolve()
+    # Handle discovery mode
+    if args.discovery:
+        models = list(discover_aircraft_in_sim(game_path, True))
+        print(f"Found inside '{game_path}' models:")
+        print(*models, sep="\n")
+        sys.exit(0)
 
-            if livery_path.suffix.lower() != ".ptp":
-                print(f"Warning: Wrong extension for file {livery_path}")
-            if not livery_path.is_file():
-                print(f"Warning: Skipping missing file: {livery_path}")
-            else:
-                file_paths.append(livery_path)
+    # Process file paths
+    file_paths = []
+    for arg in args.files:
+        livery_path = Path(arg).resolve()
 
-        return game_path, file_paths, dry_run
+        if livery_path.suffix.lower() != ".ptp":
+            print(f"Warning: Wrong extension for file {livery_path}")
+        if not livery_path.is_file():
+            print(f"Warning: Skipping missing file: {livery_path}")
+        else:
+            file_paths.append(livery_path)
 
-    except (IndexError, AssertionError):
-        print("Usage: python main.py [-n][-f] <sim short name or sim path> <file1> <file2> ...\n\nFound sims:")
-        print(*games, sep="\n")
-        sys.exit(1)
+    return game_path, file_paths, args.dry_run
 
 
 if __name__ == "__main__":
@@ -322,7 +324,7 @@ if __name__ == "__main__":
     if dry_run:
         print("Info: Dry Run\n")
 
-    models = list(discover_aircraft_in_sim(game_path))
+    models = list(discover_aircraft_in_sim(game_path, False))
 
     for file_path in file_paths:
         try:
@@ -336,3 +338,4 @@ if __name__ == "__main__":
         except ValueError as e:
             print(e)
 # TODO: add unziping
+# TODO: check if livery already installed
